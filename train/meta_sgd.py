@@ -20,6 +20,7 @@ class MetaSGDTrainUtils():
         for i,(xb,yb) in enumerate(data.train_dl):
             xb,yb = cb_handler.on_batch_begin(xb,yb)
             ypred = learn.model(xb)
+            # raise ValueError()
             loss += learn.loss_func(ypred,yb)
         
         loss /= len(data.train_dl.items)
@@ -62,7 +63,7 @@ class MetaSGDTrainUtils():
             for xb,yb in val_dl:
                 ids = np.random.shuffle(np.arange(yb.shape[0]))
                 xb,yb = cb_handler.on_batch_begin(xb[ids,...].squeeze().contiguous(),yb[ids].squeeze().contiguous())
-                y_pred = learn.model(xb,trained_dict)
+                y_pred = learn.model(xb,trained_dict,'meta_learner')
                 loss_task += learn.loss_func(y_pred,yb)
             loss_task /= len(val_dl.items)
             meta_loss += loss_task
@@ -86,7 +87,7 @@ class MetaSGDTrainUtils():
                 task_acc = 0
                 for xb,yb in val_dl:
                     xb,yb = cb_handler.on_batch_begin(xb,yb)
-                    y_pred = learn.model(xb,trained_dict)
+                    y_pred = learn.model(xb,trained_dict,'meta_learner')
                     task_acc += (y_pred.argmax(-1)==yb).float().mean()
                     loss_task += learn.loss_func(y_pred,yb)
                 loss_task /= len(val_dl.items)

@@ -28,7 +28,8 @@ class MetaLearner(Learner):
         learn.meta_databunch = data
         model_params = list(model.parameters()) + list(model.task_lr.values()) if mode=='meta_sgd' else list(model.parameters())
         learn.opt = torch.optim.Adam(model_params)
-        Learner.meta_fit = partial(meta_fit, fit_fn = fit_fns[mode])
+        learn.fit_fn = fit_fns[mode]
+        Learner.meta_fit = meta_fit
         return learn
 
     "Not yet implemented"
@@ -56,13 +57,13 @@ class MetaModel(nn.Module):
         super(MetaModel, self).__init__()
         self.meta_learner = model
 
-    def forward(self, X, adapted_params=None):
+    def forward(self, X, adapted_params=None,prefix=None):
         if adapted_params == None:
             # self.load_state_dict(self.initial_weights)
             out = self.meta_learner(X)
         else:
             # self.load_state_dict(adapted_params)
-            out = self.meta_learner(X,adapted_params)
+            out = self.meta_learner(X,adapted_params,prefix)
         return out
 
     def cloned_state_dict(self):
@@ -86,7 +87,7 @@ class MetaModel(nn.Module):
             #     self.task_lr[key] = self.task_lr[key].cuda()
             # self.initial_weights = self.cloned_state_dict()
 
-def meta_fit(self,fit_fn,epochs:int, lr:Union[Floats,slice]=defaults.lr,
+def meta_fit(self,epochs:int, lr:Union[Floats,slice]=defaults.lr,
     wd:Floats=None, callbacks:Collection[Callback]=None,**kwargs)->None:
     "Fit the model on this learner with `lr` learning rate, `wd` weight decay for `epochs` with `callbacks`."
     lr = self.lr_range(lr)
@@ -95,6 +96,5 @@ def meta_fit(self,fit_fn,epochs:int, lr:Union[Floats,slice]=defaults.lr,
         self.opt = OptimWrapper(self.opt,lr,wd)
     callbacks = [cb(self) for cb in self.callback_fns + listify(defaults.extra_callback_fns)] + listify(callbacks)
     self.cb_fns_registered = True
-    fit_fn(epochs, self, metrics=self.metrics, callbacks=self.callbacks+callbacks,**kwargs) 
-
+    self.fit_fn(epochs, self, metrics=self.metrics, callbacks=self.callbacks+callbacks,**kwargs) 
 
