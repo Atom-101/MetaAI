@@ -8,9 +8,10 @@ from MetaAI.data import MetaDataBunch
 from MetaAI.models import Net
 from MetaAI.train.meta_sgd import *
 from MetaAI.train.reptile import *
+from MetaAI.train.maml import *
 
 
-fit_fns = {'meta_sgd':meta_sgd_fit,'reptile':reptile_fit,'maml':None}
+fit_fns = {'meta_sgd':meta_sgd_fit,'reptile':reptile_fit,'maml':maml_fit}
 # Make a functional model
 # Wrap that model in a MetaModel
 # Make a MetaLearner from MetaModel

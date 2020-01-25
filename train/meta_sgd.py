@@ -20,7 +20,6 @@ class MetaSGDTrainUtils():
         for i,(xb,yb) in enumerate(data.train_dl):
             xb,yb = cb_handler.on_batch_begin(xb,yb)
             ypred = learn.model(xb)
-            # raise ValueError()
             loss += learn.loss_func(ypred,yb)
         
         loss /= len(data.train_dl.items)

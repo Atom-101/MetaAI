@@ -55,6 +55,15 @@ class ReptileTrainUtils():
             }
         )
 
+    @classmethod
+    def evaluate_trained_model(cls,learn,task):
+        learn.model.eval()
+        for xb,yb in task.valid_dl:
+            ypred = learn.model(xb)
+            loss = learn.loss_func(ypred,yb)
+        acc = (ypred.argmax(1).detach().cpu() == yb.cpu()).numpy().sum()/yb.shape[0]
+        return loss,acc
+
 def reptile_fit(epochs:int, learn:Learner, callbacks:Optional[CallbackList]=None, metrics:OptMetrics=None,k=5,inner_lr=1e-3,epsilon=1e-3)->None:
     cb_handler = CallbackHandler(callbacks, metrics)
     pbar = master_bar(range(epochs))
@@ -72,20 +81,24 @@ def reptile_fit(epochs:int, learn:Learner, callbacks:Optional[CallbackList]=None
                 cb_handler.on_batch_end(loss)
             # accuracy = []
             if not cb_handler.skip_validate:
-                val_loss = reptile_validate(learn, cb_handler=cb_handler,pbar=pbar,k=k,inner_lr=inner_lr)
+                val_loss,accuracies = reptile_validate(learn, cb_handler=cb_handler,pbar=pbar,k=k,inner_lr=inner_lr)
             else:
                 val_loss = None
             if cb_handler.on_epoch_end(val_loss): break
+            print(np.mean(np.array(accuracies)))
     except Exception as e:
         exception = e
         raise
     finally: cb_handler.on_train_end(exception) 
 
 def reptile_validate(learn,average=True,cb_handler=None,pbar=None,k=5,inner_lr=1e-3):
-    val_losses=[]
+    val_losses,accuracies=[],[]
     for task in progress_bar(learn.meta_databunch.valid_tasks,parent=pbar):
-        val_loss,_= ReptileTrainUtils.train_single_task(learn,task,inner_lr,k,cb_handler)
-        val_losses.append(val_loss)
+        query_train_loss,original_state_dict= ReptileTrainUtils.train_single_task(learn,task,inner_lr,k,cb_handler)
+        query_val_loss,acc = ReptileTrainUtils.evaluate_trained_model(learn,task)
+        val_losses.append(query_val_loss)
+        accuracies.append(acc)
+        learn.model.load_state_dict(original_state_dict)
         if cb_handler and cb_handler.on_batch_end(val_losses[-1]): break
-    if average: return to_np(torch.stack(val_losses)).mean()
-    else: return val_losses
+    if average: return to_np(torch.stack(val_losses)).mean(),accuracies
+    else: return val_losses,accuracies
