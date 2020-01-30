@@ -32,3 +32,12 @@ learn = MetaLearner.from_model(data=data,
                                             
 learn.meta_fit(epochs=20,lr=1e-3,outer_batch_size=16)                                            
 ```
+## Results 
+Task performed was Omniglot 5-way 1-shot. All models were trained for 20 epochs with meta lr = 1e-3. All models used 3 channel 32x32 images as input.
+
+|Model|Meta-SGD|MAML|
+|---|---|---|
+|Default Net|94.2|79.5|
+|Resnet18(pretrained) |53.4||
+
+*MAML has a low accuracy because it needs more epochs to converge. It has a slower convergence speed than Meta-SGD.
