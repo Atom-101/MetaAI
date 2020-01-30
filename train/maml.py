@@ -80,7 +80,7 @@ class MamlTrainUtils():
             acc /= len(eval_bundle)
         return query_loss_batch,acc
 
-def maml_fit(epochs:int,learn:Learner,support_train_lr:float=1e-3,callbacks:Optional[CallbackList]=None,metrics:OptMetrics=None,outer_batch_size:int=5)->None:
+def maml_fit(epochs:int,learn:Learner,support_train_lr:float=1e-2,callbacks:Optional[CallbackList]=None,metrics:OptMetrics=None,outer_batch_size:int=5)->None:
     cb_handler = CallbackHandler(callbacks, metrics)
     pbar = master_bar(range(epochs))
     cb_handler.on_train_begin(epochs,pbar=pbar,metrics=metrics)
@@ -112,7 +112,7 @@ def maml_fit(epochs:int,learn:Learner,support_train_lr:float=1e-3,callbacks:Opti
         raise
     finally: cb_handler.on_train_end(exception)
 
-def maml_validate(learn,outer_batch_size=5,support_train_lr=1e-3,cb_handler=None,pbar=None):
+def maml_validate(learn,outer_batch_size=5,support_train_lr=1e-2,cb_handler=None,pbar=None):
     meta_eval_bundle = []
     val_losses,accuracy = [],[]
     for i,task in enumerate(progress_bar(learn.meta_databunch.valid_tasks,parent=pbar)):

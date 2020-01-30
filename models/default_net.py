@@ -1,5 +1,7 @@
 from fastai.vision import *
 
+''' Code taken from https://github.com/jik0730/Meta-SGD-pytorch'''
+
 N_FILTERS = 64  # number of filters used in conv_block
 K_SIZE = 3  # size of kernel
 MP_SIZE = 2  # size of max pooling
@@ -38,7 +40,7 @@ class Net(nn.Module):
         else:
             raise Exception("I don't know your dataset")
 
-    def forward(self, X, params=None):
+    def forward(self, X, params=None,prefix=''):
         """
         Args:
             X: [N, in_channels, W, H]

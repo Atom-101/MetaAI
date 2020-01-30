@@ -1,0 +1,7 @@
+trial.ipynb
+__pycache__
+data/__pycache__
+models/__pycache__
+models/dump.txt
+.ipynb_checkpoints
+trial-Copy1.ipynb

@@ -16,9 +16,9 @@ class MetaSGDTrainUtils():
         # forward pass all batches in task. and accumulate gradients(doesn't work with BatchNormalization)
         grads = None
         loss = 0
-        cb_handler.set_dl(data.train_dl)
+        if cb_handler: cb_handler.set_dl(data.train_dl)
         for i,(xb,yb) in enumerate(data.train_dl):
-            xb,yb = cb_handler.on_batch_begin(xb,yb)
+            if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
             ypred = learn.model(xb)
             loss += learn.loss_func(ypred,yb)
         
@@ -82,10 +82,10 @@ class MetaSGDTrainUtils():
         with torch.no_grad():
             for trained_dict,val_dl in eval_bundle:
                 loss_task = 0.0
-                cb_handler.set_dl(val_dl)
+                if cb_handler: cb_handler.set_dl(val_dl)
                 task_acc = 0
                 for xb,yb in val_dl:
-                    xb,yb = cb_handler.on_batch_begin(xb,yb)
+                    if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
                     y_pred = learn.model(xb,trained_dict,'meta_learner')
                     task_acc += (y_pred.argmax(-1)==yb).float().mean()
                     loss_task += learn.loss_func(y_pred,yb)
