@@ -38,6 +38,7 @@ Task performed was Omniglot 5-way 1-shot. All models were trained for 20 epochs 
 |Model|Meta-SGD|MAML|
 |---|---|---|
 |Default Net|94.2|79.5|
-|Resnet18(pretrained) |53.4||
+|Resnet18|71.9|51.9|
+|Resnet18 (pretrained)||53.4
 
 *MAML has a low accuracy because it needs more epochs to converge. It has a slower convergence speed than Meta-SGD.
