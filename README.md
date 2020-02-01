@@ -1,7 +1,7 @@
 # Meta.AI
 This is a deep learning library specialised for meta-learning. It uses fastai(v1) and Pytorch. Currently the meta learning DataBunch only supports from_df() functionality. 
 
-# Demo
+## Demo
 ```python
 from MetaAI.models import *
 from MetaAI.train import *
@@ -42,3 +42,7 @@ Task performed was Omniglot 5-way 1-shot. All models were trained for 20 epochs 
 |Resnet18 (pretrained)|53.4|26.1
 
 *MAML has a low accuracy because it needs more epochs to converge. It has a slower convergence speed than Meta-SGD.
+
+## Credits
+The code was partly inspired from: https://github.com/jik0730/Meta-SGD-pytorch
+
