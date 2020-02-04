@@ -1,4 +1,4 @@
-# Meta.AI
+# MetaAI
 This is a deep learning library specialised for meta-learning. It uses fastai(v1) and Pytorch. Currently the meta learning DataBunch only supports from_df() functionality. 
 
 ## Demo
