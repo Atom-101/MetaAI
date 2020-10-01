@@ -9,26 +9,23 @@ from MetaAI.data import MetaDataBunch
 class MetaSGDTrainUtils():
     "Encapsulates methods needed to train a learner using MetaSGD algorithm"
     @classmethod
-    def train_single_task(cls, learn, data, cb_handler, **kwargs):
+    def train_single_task(cls, learn, data, cb_handler, ind, train=True, shots=1):
         # set model to training mode
         learn.model.train()
-        # learn.model.cuda()
-        # forward pass all batches in task. and accumulate gradients(doesn't work with BatchNormalization)
         grads = None
         loss = 0
+        if ind: idx=ind else idx=list(range(shots))
         if cb_handler: cb_handler.set_dl(data.train_dl)
         for i,(xb,yb) in enumerate(data.train_dl):
+            if train:
+                idx = torch.randperm(xb.shape[0])[:shots]
+            xb=xb[idx].unsqueeze(0)
+            yb=yb[idx].unsqueeze(0)
+            yb/=255
             if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
             ypred = learn.model(xb)
-            loss += learn.loss_func(ypred,yb)
-        
-        loss /= len(data.train_dl.items)
-    
-        # loss.backward(create_graph=True)
-            # if not grads:    
-            #     grads = torch.autograd.grad(loss, learn.model.parameters(), create_graph=True)
-            # else:
-            #     grads = [grads[i] + torch.autograd.grad(loss, learn.model.parameters(), retain_graph=True)[i] for i in range(len(grads))]
+            loss += learn.loss_func(ypred,yb.type(torch.FloatTensor).cuda())
+        loss /= shots
         def zero_grad(params):
             for p in params:
                 if p.grad is not None:
@@ -43,28 +40,24 @@ class MetaSGDTrainUtils():
             task_lr = learn.model.task_lr[key]
             adapted_params[key] = val - task_lr * grad
             adapted_state_dict[key] = adapted_params[key]
-        # for key, val in learn.model.named_parameters():
-        #     # Also we only need single update of inner gradient update
-        #     task_lr = learn.model.task_lr[key]
-        #     adapted_params[key] = val - task_lr * val.grad
-        #     adapted_state_dict[key] = adapted_params[key]
-
-        return adapted_state_dict
+        return adapted_state_dict, idx
     
     @classmethod
     def meta_update_batch(cls, learn, eval_bundle, cb_handler):
         "Evaluate model trained on a task and return loss"
         meta_loss = 0.0
-        
-        for trained_dict,val_dl in eval_bundle:
+        learn.model.train()
+        for trained_dict,val_dl,idx in eval_bundle:
             loss_task = 0.0
             cb_handler.set_dl(val_dl)
             for xb,yb in val_dl:
-                ids = np.random.shuffle(np.arange(yb.shape[0]))
-                xb,yb = cb_handler.on_batch_begin(xb[ids,...].squeeze().contiguous(),yb[ids].squeeze().contiguous())
+                idx = [i for i in range(xb.shape[0]) if i not in idx]
+                xb,yb = xb[idx],yb[idx]
+                yb/=255
+                if cb_handler: xb,yb = cb_handler.on_batch_begin(xb.contiguous(),yb.contiguous())
                 y_pred = learn.model(xb,trained_dict,'meta_learner')
-                loss_task += learn.loss_func(y_pred,yb)
-            loss_task /= len(val_dl.items)
+                loss_task += learn.loss_func(y_pred,yb.type(torch.FloatTensor).cuda())
+            loss_task /= len(idx)
             meta_loss += loss_task
         meta_loss /= len(eval_bundle)
         
@@ -79,15 +72,18 @@ class MetaSGDTrainUtils():
     def meta_validate_batch(cls, learn, eval_bundle, cb_handler):
         meta_loss = 0.0
         acc = 0.0
+        learn.model.eval()
         with torch.no_grad():
-            for trained_dict,val_dl in eval_bundle:
-                loss_task = 0.0
+            for trained_dict,val_dl,idx in eval_bundle:
+                loss_task,task_acc = 0.,0.
                 if cb_handler: cb_handler.set_dl(val_dl)
-                task_acc = 0
                 for xb,yb in val_dl:
-                    if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
+                    idx = [i for i in range(xb.shape[0]) if i not in idx]
+                    xb,yb = xb[idx],yb[idx]
+                    yb/=255
+                    if cb_handler: xb,yb = cb_handler.on_batch_begin(xb.contiguous(),yb.contiguous())
                     y_pred = learn.model(xb,trained_dict,'meta_learner')
-                    task_acc += (y_pred.argmax(-1)==yb).float().mean()
+                    task_acc += (ypred.argmax(1).detach().cpu() == yb.cpu()).numpy().sum()/yb.shape[0]
                     loss_task += learn.loss_func(y_pred,yb)
                 loss_task /= len(val_dl.items)
                 meta_loss += loss_task
@@ -100,6 +96,7 @@ def meta_sgd_fit(epochs:int, learn:Learner, callbacks:Optional[CallbackList]=Non
     cb_handler = CallbackHandler(callbacks, metrics)
     pbar = master_bar(range(epochs))
     cb_handler.on_train_begin(epochs,pbar=pbar,metrics=metrics)
+    max_acc=0
     # cb_handler.set_dl(learn.data.train_dl)
 
     exception=False
@@ -109,28 +106,18 @@ def meta_sgd_fit(epochs:int, learn:Learner, callbacks:Optional[CallbackList]=Non
             meta_train_bundle = []
             # Training
             for i,task in enumerate(progress_bar(learn.meta_databunch.train_tasks,parent=pbar)):
-                trained_state_dict = MetaSGDTrainUtils.train_single_task(learn,task,cb_handler,train=True)
-                meta_train_bundle.append((trained_state_dict,task.valid_dl))
-                if i%outer_batch_size == 1 or i == len(learn.meta_databunch.train_tasks)-1:
+                trained_state_dict,idx = MetaSGDTrainUtils.train_single_task(learn,task,cb_handler,train=True)
+                meta_train_bundle.append((trained_state_dict,task.train_dl,idx))
+                if i%outer_batch_size == outer_batch_size-1 or i == len(learn.meta_databunch.train_tasks)-1:
                     loss = MetaSGDTrainUtils.meta_update_batch(learn,meta_train_bundle,cb_handler)
                     meta_train_bundle = []
                     gc.collect()
                     cb_handler.on_batch_end(loss)
             
             # Validation
-            
             if not cb_handler.skip_validate:
-                val_losses,accuracy = meta_sgd_validate(learn,outer_batch_size,cb_handler,pbar)
-            #     for i,task in enumerate(progress_bar(learn.meta_databunch.valid_tasks,parent=pbar)):
-            #         trained_state_dict = MetaSGDTrainUtils.train_single_task(learn,task,cb_handler,train=False)
-            #         meta_eval_bundle.append((trained_state_dict,task.valid_dl))
-            #         if i%outer_batch_size == 1:
-            #             val_loss,acc = MetaSGDTrainUtils.meta_validate_batch(learn,meta_eval_bundle,cb_handler)            
-            #             val_losses.append(val_loss)
-            #             accuracy.append(np.array(acc))
-            #             if cb_handler and cb_handler.on_batch_end(val_losses[-1]): break
-            
-            val_loss = to_np(torch.stack(val_losses)).mean()
+                val_losses,accuracy = meta_sgd_validate(learn,outer_batch_size,cb_handler,pbar)            
+            val_loss = np.stack(val_losses).mean()
             if cb_handler.on_epoch_end(val_loss): break
             print(np.array(accuracy).mean())
     except Exception as e:
@@ -138,15 +125,15 @@ def meta_sgd_fit(epochs:int, learn:Learner, callbacks:Optional[CallbackList]=Non
         raise
     finally: cb_handler.on_train_end(exception)
 
-def meta_sgd_validate(learn,outer_batch_size=5,cb_handler=None,pbar=None):
+def meta_sgd_validate(learn,outer_batch_size=5,cb_handler=None,pbar=None,ind=None):
     meta_eval_bundle = []
     val_losses,accuracy = [],[]
     for i,task in enumerate(progress_bar(learn.meta_databunch.valid_tasks,parent=pbar)):
-        trained_state_dict = MetaSGDTrainUtils.train_single_task(learn,task,cb_handler,train=False)
-        meta_eval_bundle.append((trained_state_dict,task.valid_dl))
-        if i%outer_batch_size == 1 or i == len(learn.meta_databunch.valid_tasks)-1:
+        trained_state_dict,idx = MetaSGDTrainUtils.train_single_task(learn,task,cb_handler,train=False,ind=ind)
+        meta_eval_bundle.append((trained_state_dict,task.train_dl,idx))
+        if i%outer_batch_size == outer_batch_size-1 or i == len(learn.meta_databunch.valid_tasks)-1:
             val_loss,acc = MetaSGDTrainUtils.meta_validate_batch(learn,meta_eval_bundle,cb_handler)            
-            val_losses.append(val_loss)
+            val_losses.append(val_loss.detach().cpu().numpy())
             accuracy.append(np.array(acc))
             if cb_handler and cb_handler.on_batch_end(val_losses[-1]): break
     return val_losses,accuracy
