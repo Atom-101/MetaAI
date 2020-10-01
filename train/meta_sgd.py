@@ -135,5 +135,6 @@ def meta_sgd_validate(learn,outer_batch_size=5,cb_handler=None,pbar=None,ind=Non
             val_loss,acc = MetaSGDTrainUtils.meta_validate_batch(learn,meta_eval_bundle,cb_handler)            
             val_losses.append(val_loss.detach().cpu().numpy())
             accuracy.append(np.array(acc))
+            meta_eval_bundle = []
             if cb_handler and cb_handler.on_batch_end(val_losses[-1]): break
     return val_losses,accuracy
