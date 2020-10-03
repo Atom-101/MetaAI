@@ -3,8 +3,8 @@ from fastai.vision import *
 from fastai.callbacks import *
 from collections import OrderedDict
 from fastai.vision.learner import cnn_config
-from utils import tensor_splitter
 
+from MetaAI.train.utils import tensor_splitter
 from MetaAI.data import MetaDataBunch
 
 class MetaSGDTrainUtils():
@@ -23,9 +23,8 @@ class MetaSGDTrainUtils():
         zero_grad(learn.model.parameters()) 
         for i,(xb,yb) in enumerate(data.train_dl):
             idx=ind if ind else tensor_splitter(yb,learn.ways,learn.shots,train=train)
-            xb=xb[idx].unsqueeze(0)
-            yb=yb[idx].unsqueeze(0)
-            yb/=255
+            xb=xb[idx]
+            yb=yb[idx]
             if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
             ypred = learn.model(xb)
             loss += learn.loss_func(ypred,yb.type(torch.FloatTensor).cuda())/learn.shots
@@ -50,7 +49,6 @@ class MetaSGDTrainUtils():
             for xb,yb in val_dl:
                 idx = [i for i in range(xb.shape[0]) if i not in idx]
                 xb,yb = xb[idx],yb[idx]
-                yb/=255
                 if cb_handler: xb,yb = cb_handler.on_batch_begin(xb.contiguous(),yb.contiguous())
                 y_pred = learn.model(xb,trained_dict,'meta_learner')
                 loss_task += learn.loss_func(y_pred,yb.type(torch.FloatTensor).cuda())
@@ -77,7 +75,6 @@ class MetaSGDTrainUtils():
                 for xb,yb in val_dl:
                     idx = [i for i in range(xb.shape[0]) if i not in idx]
                     xb,yb = xb[idx],yb[idx]
-                    yb/=255
                     if cb_handler: xb,yb = cb_handler.on_batch_begin(xb.contiguous(),yb.contiguous())
                     y_pred = learn.model(xb,trained_dict,'meta_learner')
                     task_acc += (y_pred.argmax(1).detach().cpu() == yb.cpu()).numpy().sum()/yb.shape[0]

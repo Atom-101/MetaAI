@@ -11,7 +11,7 @@ from MetaAI.train.reptile import *
 from MetaAI.train.maml import *
 
 
-fit_fns = {'meta_sgd':meta_sgd_fit,'reptile':reptile_fit,'maml':maml_fit}
+fit_fns = {'meta_sgd':meta_sgd_fit,'reptile':reptile_fit,'maml':maml_fit,'fomaml':maml_fit}
 # Make a functional model
 # Wrap that model in a MetaModel
 # Make a MetaLearner from MetaModel
@@ -31,6 +31,9 @@ class MetaLearner(Learner):
         learn.opt = torch.optim.Adam(model_params)
         learn.fit_fn = fit_fns[mode]
         Learner.meta_fit = meta_fit
+        learn.mode=mode
+        learn.ways=data.ways
+        learn.shots=data.shots
         return learn
 
     "Not yet implemented"

@@ -3,8 +3,8 @@ from fastai.vision import *
 from fastai.callbacks import *
 from collections import OrderedDict
 from fastai.vision.learner import cnn_config
-from utils import tensor_splitter
 
+from MetaAI.train.utils import tensor_splitter
 from MetaAI.data import MetaDataBunch
 
 
@@ -18,10 +18,9 @@ class ReptileTrainUtils():
         original_state_dict = learn.model.cloned_state_dict()
         optim = torch.optim.SGD(learn.model.parameters(),lr=inner_lr)
         if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
-        yb/=255
         for _ in range(k):
             ypred = learn.model(xb)
-            loss = learn.loss_func(ypred,yb.float().cuda())/
+            loss = learn.loss_func(ypred,yb.float().cuda())/xb.shape[0]
             loss.backward()
             optim.step()
             optim.zero_grad()
@@ -44,7 +43,6 @@ class ReptileTrainUtils():
         learn.model.eval()
         orig_state_dict = learn.model.cloned_state_dict()
         learn.model.load_state_dict(adapted_state_dict)
-        yb=yb/255
         yb = yb.float().cuda()
         y_pred = learn.model(xb)
         loss = learn.loss_func(ypred,yb)
