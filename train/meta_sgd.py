@@ -3,37 +3,34 @@ from fastai.vision import *
 from fastai.callbacks import *
 from collections import OrderedDict
 from fastai.vision.learner import cnn_config
+from utils import tensor_splitter
 
 from MetaAI.data import MetaDataBunch
 
 class MetaSGDTrainUtils():
     "Encapsulates methods needed to train a learner using MetaSGD algorithm"
     @classmethod
-    def train_single_task(cls, learn, data, cb_handler, ind, train=True, shots=1):
+    def train_single_task(cls, learn, data, cb_handler, ind=None, train=True):
         # set model to training mode
         learn.model.train()
         grads = None
         loss = 0
-        if ind: idx=ind else idx=list(range(shots))
         if cb_handler: cb_handler.set_dl(data.train_dl)
+        def zero_grad(params):
+            for p in params:
+                if p.grad is not None:
+                    p.grad.zero_()
+        zero_grad(learn.model.parameters()) 
         for i,(xb,yb) in enumerate(data.train_dl):
-            if train:
-                idx = torch.randperm(xb.shape[0])[:shots]
+            idx=ind if ind else tensor_splitter(yb,learn.ways,learn.shots,train=train)
             xb=xb[idx].unsqueeze(0)
             yb=yb[idx].unsqueeze(0)
             yb/=255
             if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
             ypred = learn.model(xb)
-            loss += learn.loss_func(ypred,yb.type(torch.FloatTensor).cuda())
-        loss /= shots
-        def zero_grad(params):
-            for p in params:
-                if p.grad is not None:
-                    p.grad.zero_()
-        zero_grad(learn.model.parameters())        
-        grads = torch.autograd.grad(loss, learn.model.parameters()) if kwargs['train']==False \
+            loss += learn.loss_func(ypred,yb.type(torch.FloatTensor).cuda())/learn.shots
+        grads = torch.autograd.grad(loss, learn.model.parameters()) if train==False \
             else torch.autograd.grad(loss, learn.model.parameters(), create_graph=True)
-        # perform manual gradient updates
         adapted_state_dict = learn.model.cloned_state_dict()
         adapted_params = OrderedDict()
         for (key, val), grad in zip(learn.model.named_parameters(), grads):
@@ -83,7 +80,7 @@ class MetaSGDTrainUtils():
                     yb/=255
                     if cb_handler: xb,yb = cb_handler.on_batch_begin(xb.contiguous(),yb.contiguous())
                     y_pred = learn.model(xb,trained_dict,'meta_learner')
-                    task_acc += (ypred.argmax(1).detach().cpu() == yb.cpu()).numpy().sum()/yb.shape[0]
+                    task_acc += (y_pred.argmax(1).detach().cpu() == yb.cpu()).numpy().sum()/yb.shape[0]
                     loss_task += learn.loss_func(y_pred,yb)
                 loss_task /= len(val_dl.items)
                 meta_loss += loss_task
@@ -96,7 +93,7 @@ def meta_sgd_fit(epochs:int, learn:Learner, callbacks:Optional[CallbackList]=Non
     cb_handler = CallbackHandler(callbacks, metrics)
     pbar = master_bar(range(epochs))
     cb_handler.on_train_begin(epochs,pbar=pbar,metrics=metrics)
-    max_acc=0
+    # max_acc=0
     # cb_handler.set_dl(learn.data.train_dl)
 
     exception=False

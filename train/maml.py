@@ -3,19 +3,19 @@ from fastai.vision import *
 from fastai.callbacks import *
 from collections import OrderedDict
 from fastai.vision.learner import cnn_config
+from utils import tensor_splitter
 
 from MetaAI.data import MetaDataBunch
 
 class MamlTrainUtils():
     "Encapsulates methods needed to train a learner using MetaSGD algorithm"
     @classmethod
-    def train_single_task(cls, learn, data, inner_lr, cb_handler, ind, train=True, shots=1):
+    def train_single_task(cls, learn, data, inner_lr, cb_handler, ind=None, train=True):
         # set model to training mode
         learn.model.train()
         grads = None
         loss = 0
-        if ind: idx=ind else idx=list(range(shots))
-        cb_handler.set_dl(data.train_dl)
+        if cb_handler: cb_handler.set_dl(data.train_dl)
         adapted_state_dict = learn.model.cloned_state_dict()
         def zero_grad(params):
             for p in params:
@@ -23,16 +23,15 @@ class MamlTrainUtils():
                     p.grad.zero_()
         zero_grad(learn.model.parameters()) 
         for i,(xb,yb) in enumerate(data.train_dl):
-            if train:
-                idx = torch.randperm(xb.shape[0])[:shots]
+            idx=ind if ind else tensor_splitter(yb,learn.ways,learn.shots,train=train)
             xb=xb[idx].unsqueeze(0)
             yb=yb[idx].unsqueeze(0)
             yb/=255
             if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
             for _ in range(5):
                 ypred = learn.model(xb)
-                loss = learn.loss_func(ypred,yb.type(torch.FloatTensor).cuda())/shots
-                grads = torch.autograd.grad(loss, adapted_state_dict.values(),create_graph=mode=='fomaml')
+                loss = learn.loss_func(ypred,yb.type(torch.FloatTensor).cuda())/learn.shots
+                grads = torch.autograd.grad(loss, adapted_state_dict.values(),create_graph=learn.mode=='fomaml')
                 for (key, val), grad in zip(learn.model.named_parameters(), grads):
                     adapted_state_dict[key] = val - inner_lr * grad
         return adapted_state_dict,idx
@@ -57,7 +56,7 @@ class MamlTrainUtils():
         meta_loss /= len(eval_bundle)
         
         if learn.opt is not None:
-            query_loss_batch,skip_bwd = cb_handler.on_backward_begin(meta_loss)
+            meta_loss,skip_bwd = cb_handler.on_backward_begin(meta_loss)
             if not skip_bwd:                     meta_loss.backward()
             if not cb_handler.on_backward_end(): learn.opt.step()
             if not cb_handler.on_step_end():     learn.opt.zero_grad()
@@ -78,7 +77,7 @@ class MamlTrainUtils():
                     yb/=255
                     if cb_handler: xb,yb = cb_handler.on_batch_begin(xb.contiguous(),yb.contiguous())
                     y_pred = learn.model(xb,trained_dict,'meta_learner')
-                    task_acc += (ypred.argmax(1).detach().cpu() == yb.cpu()).numpy().sum()/yb.shape[0]
+                    task_acc += (y_pred.argmax(1).detach().cpu() == yb.cpu()).numpy().sum()/yb.shape[0]
                     loss_task += learn.loss_func(y_pred,yb)
                 loss_task /= len(val_dl.items)
                 meta_loss += loss_task
@@ -87,11 +86,12 @@ class MamlTrainUtils():
             acc /= len(eval_bundle)
         return meta_loss,acc
 
-def maml_fit(epochs:int,learn:Learner,support_train_lr:float=1e-2,callbacks:Optional[CallbackList]=None,metrics:OptMetrics=None,outer_batch_size:int=5)->None:
+def maml_fit(epochs:int,learn:Learner,support_train_lr:float=1e-2,callbacks:Optional[CallbackList]=None,metrics:OptMetrics=None,
+            outer_batch_size:int=5)->None:
     cb_handler = CallbackHandler(callbacks, metrics)
     pbar = master_bar(range(epochs))
     cb_handler.on_train_begin(epochs,pbar=pbar,metrics=metrics)
-    max_acc = 0
+    # max_acc = 0
     # cb_handler.set_dl(learn.data.train_dl)
 
     exception=False
@@ -124,7 +124,7 @@ def maml_validate(learn,outer_batch_size=5,support_train_lr=1e-2,cb_handler=None
     val_losses,accuracy = [],[]
     for i,task in enumerate(progress_bar(learn.meta_databunch.valid_tasks,parent=pbar)):
         trained_state_dict,idx = MamlTrainUtils.train_single_task(learn,task,1e-3,cb_handler,train=False)
-        meta_eval_bundle.append((trained_state_dict,task.train_dl))
+        meta_eval_bundle.append((trained_state_dict,task.train_dl,idx))
         if i%outer_batch_size == outer_batch_size-1 or i == len(learn.meta_databunch.valid_tasks)-1:
             val_loss,acc = MamlTrainUtils.meta_validate_batch(learn,meta_eval_bundle,cb_handler)            
             val_losses.append(val_loss)
