@@ -14,7 +14,7 @@ class ReptileTrainUtils():
     def train_single_task(cls, learn, xb, yb, inner_lr, k, cb_handler,**kwargs):
         # set model to training mode
         learn.model.train()
-        cb_handler.set_dl(data.train_dl)
+        # cb_handler.set_dl(data.train_dl)
         original_state_dict = learn.model.cloned_state_dict()
         optim = torch.optim.SGD(learn.model.parameters(),lr=inner_lr)
         if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
@@ -45,7 +45,7 @@ class ReptileTrainUtils():
         learn.model.load_state_dict(adapted_state_dict)
         yb = yb.cuda()
         y_pred = learn.model(xb)
-        loss = learn.loss_func(ypred,yb)
+        loss = learn.loss_func(y_pred,yb)
         learn.model.load_state_dict(orig_state_dict)
         del(adapted_state_dict)
         gc.collect()
@@ -75,10 +75,11 @@ def reptile_fit(epochs:int, learn:Learner, callbacks:Optional[CallbackList]=None
     try:
         for epoch in pbar:    
             cb_handler.on_epoch_begin()
-            cb_handler.set_dl(learn.meta_databunch.train_tasks)
+            cb_handler.set_dl(learn.meta_databunch.train_tasks[0])
             orig = learn.model.cloned_state_dict()
             avg_state_dict = None
-            for i,(xb,yb) in enumerate(progress_bar(learn.meta_databunch.train_tasks.train_dl,parent=pbar)):
+            for i,task in enumerate(progress_bar(learn.meta_databunch.train_tasks,parent=pbar)):
+                xb,yb = list(task.train_dl)[0]
                 loss,adapted_state_dict = ReptileTrainUtils.train_single_task(learn,xb,yb,inner_lr,k,cb_handler)
                 cb_handler.on_backward_begin(loss)
                 avg_state_dict = average_dicts(avg_state_dict,adapted_state_dict,num_acc)
@@ -105,12 +106,11 @@ def reptile_validate(learn,average=True,cb_handler=None,pbar=None,k=5,inner_lr=1
     for task in progress_bar(learn.meta_databunch.valid_tasks,parent=pbar):
         xb,yb = list(task.train_dl)[0]
         idx=ind if ind else tensor_splitter(yb,learn.ways,learn.shots,train=False)
-        loss,adapted_state_dict= ReptileTrainUtils.train_single_task(learn,xb[ind],yb[ind],inner_lr,k,cb_handler)
+        loss,adapted_state_dict= ReptileTrainUtils.train_single_task(learn,xb[idx],yb[idx],inner_lr,k,cb_handler)
         idx = [i for i in range(xb.shape[0]) if i not in idx]
         query_val_loss,acc = ReptileTrainUtils.meta_validate_batch(learn,xb[idx],yb[idx],adapted_state_dict)    
         val_losses.append(query_val_loss.detach().cpu().numpy())
         accuracies.append(np.array(acc))
-        learn.model.load_state_dict(original_state_dict)
         if cb_handler and cb_handler.on_batch_end(val_losses[-1]): break
     if average: return np.stack(val_losses).mean(),accuracies
     else: return val_losses,accuracies

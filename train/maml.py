@@ -17,6 +17,10 @@ class MamlTrainUtils():
         loss = 0
         if cb_handler: cb_handler.set_dl(data.train_dl)
         adapted_state_dict = learn.model.cloned_state_dict()
+        for k in learn.model.state_dict().keys():
+            if 'bias' in k or 'weight' in k:
+                adapted_state_dict[k].requires_grad=True
+        #diff_vals = [v for (k,v) in adapted_state_dict.items() if 'bias' in k or 'weight' in k]
         def zero_grad(params):
             for p in params:
                 if p.grad is not None:
@@ -24,12 +28,14 @@ class MamlTrainUtils():
         zero_grad(learn.model.parameters()) 
         for i,(xb,yb) in enumerate(data.train_dl):
             idx=ind if ind else tensor_splitter(yb,learn.ways,learn.shots,train=train)
-            xb,yb = xb[idx],yb[idx]
+            xb,yb=xb[idx],yb[idx]
+            # xb = 1-xb[:,:1,...]
             if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
             for _ in range(5):
-                ypred = learn.model(xb)
+                ypred = learn.model(xb,adapted_state_dict,'meta_learner')
                 loss = learn.loss_func(ypred,yb.cuda())/xb.shape[0]
-                grads = torch.autograd.grad(loss, adapted_state_dict.values(),create_graph=learn.mode=='fomaml')
+                diff_vals = [v for (k,v) in adapted_state_dict.items() if 'bias' in k or 'weight' in k]
+                grads = torch.autograd.grad(loss, diff_vals,create_graph=learn.mode=='maml')
                 for (key, val), grad in zip(learn.model.named_parameters(), grads):
                     adapted_state_dict[key] = val - inner_lr * grad
         return adapted_state_dict,idx
@@ -45,6 +51,7 @@ class MamlTrainUtils():
             for xb,yb in val_dl:
                 idx = [i for i in range(xb.shape[0]) if i not in idx]
                 xb,yb = xb[idx],yb[idx]
+                # xb = 1-xb[:,:1,...]
                 if cb_handler: xb,yb = cb_handler.on_batch_begin(xb.contiguous(),yb.contiguous())
                 y_pred = learn.model(xb,trained_dict,'meta_learner')
                 loss_task += learn.loss_func(y_pred,yb.cuda())
@@ -71,6 +78,7 @@ class MamlTrainUtils():
                 for xb,yb in val_dl:
                     idx = [i for i in range(xb.shape[0]) if i not in idx]
                     xb,yb = xb[idx],yb[idx]
+                    # xb = 1-xb[:,:1,...]
                     if cb_handler: xb,yb = cb_handler.on_batch_begin(xb.contiguous(),yb.contiguous())
                     y_pred = learn.model(xb,trained_dict,'meta_learner')
                     task_acc += (y_pred.argmax(1).detach().cpu() == yb.cpu()).numpy().sum()/yb.shape[0]
@@ -82,7 +90,7 @@ class MamlTrainUtils():
             acc /= len(eval_bundle)
         return meta_loss,acc
 
-def maml_fit(epochs:int,learn:Learner,support_train_lr:float=1e-2,callbacks:Optional[CallbackList]=None,metrics:OptMetrics=None,
+def maml_fit(epochs:int,learn:Learner,support_train_lr:float=0.1,callbacks:Optional[CallbackList]=None,metrics:OptMetrics=None,
             outer_batch_size:int=5)->None:
     cb_handler = CallbackHandler(callbacks, metrics)
     pbar = master_bar(range(epochs))
@@ -98,7 +106,7 @@ def maml_fit(epochs:int,learn:Learner,support_train_lr:float=1e-2,callbacks:Opti
             # Training
             for i,task in enumerate(progress_bar(learn.meta_databunch.train_tasks,parent=pbar)):
                 trained_state_dict,idx = MamlTrainUtils.train_single_task(learn,task,1e-3,cb_handler,train=True)
-                meta_train_bundle.append((trained_state_dict,task.trtain_dl,idx))
+                meta_train_bundle.append((trained_state_dict,task.train_dl,idx))
                 if i%outer_batch_size == outer_batch_size-1 or i == len(learn.meta_databunch.train_tasks)-1:
                     loss = MamlTrainUtils.meta_update_batch(learn,meta_train_bundle,cb_handler)
                     meta_train_bundle = []
