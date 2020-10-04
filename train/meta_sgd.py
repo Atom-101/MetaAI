@@ -27,7 +27,7 @@ class MetaSGDTrainUtils():
             yb=yb[idx]
             if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
             ypred = learn.model(xb)
-            loss += learn.loss_func(ypred,yb.type(torch.FloatTensor).cuda())/learn.shots
+            loss += learn.loss_func(ypred,yb.cuda())/xb.shape[0]
         grads = torch.autograd.grad(loss, learn.model.parameters()) if train==False \
             else torch.autograd.grad(loss, learn.model.parameters(), create_graph=True)
         adapted_state_dict = learn.model.cloned_state_dict()
@@ -51,7 +51,7 @@ class MetaSGDTrainUtils():
                 xb,yb = xb[idx],yb[idx]
                 if cb_handler: xb,yb = cb_handler.on_batch_begin(xb.contiguous(),yb.contiguous())
                 y_pred = learn.model(xb,trained_dict,'meta_learner')
-                loss_task += learn.loss_func(y_pred,yb.type(torch.FloatTensor).cuda())
+                loss_task += learn.loss_func(y_pred,yb.cuda())
             loss_task /= len(idx)
             meta_loss += loss_task
         meta_loss /= len(eval_bundle)

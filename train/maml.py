@@ -24,12 +24,11 @@ class MamlTrainUtils():
         zero_grad(learn.model.parameters()) 
         for i,(xb,yb) in enumerate(data.train_dl):
             idx=ind if ind else tensor_splitter(yb,learn.ways,learn.shots,train=train)
-            xb=xb[idx].unsqueeze(0)
-            yb=yb[idx].unsqueeze(0)
+            xb,yb = xb[idx],yb[idx]
             if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
             for _ in range(5):
                 ypred = learn.model(xb)
-                loss = learn.loss_func(ypred,yb.type(torch.FloatTensor).cuda())/learn.shots
+                loss = learn.loss_func(ypred,yb.cuda())/xb.shape[0]
                 grads = torch.autograd.grad(loss, adapted_state_dict.values(),create_graph=learn.mode=='fomaml')
                 for (key, val), grad in zip(learn.model.named_parameters(), grads):
                     adapted_state_dict[key] = val - inner_lr * grad
@@ -48,7 +47,7 @@ class MamlTrainUtils():
                 xb,yb = xb[idx],yb[idx]
                 if cb_handler: xb,yb = cb_handler.on_batch_begin(xb.contiguous(),yb.contiguous())
                 y_pred = learn.model(xb,trained_dict,'meta_learner')
-                loss_task += learn.loss_func(y_pred,yb.type(torch.FloatTensor).cuda())
+                loss_task += learn.loss_func(y_pred,yb.cuda())
             loss_task /= len(idx)
             meta_loss += loss_task
         meta_loss /= len(eval_bundle)

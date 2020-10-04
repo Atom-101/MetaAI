@@ -20,7 +20,7 @@ class ReptileTrainUtils():
         if cb_handler: xb,yb = cb_handler.on_batch_begin(xb,yb)
         for _ in range(k):
             ypred = learn.model(xb)
-            loss = learn.loss_func(ypred,yb.float().cuda())/xb.shape[0]
+            loss = learn.loss_func(ypred,yb.cuda())/xb.shape[0]
             loss.backward()
             optim.step()
             optim.zero_grad()
@@ -43,7 +43,7 @@ class ReptileTrainUtils():
         learn.model.eval()
         orig_state_dict = learn.model.cloned_state_dict()
         learn.model.load_state_dict(adapted_state_dict)
-        yb = yb.float().cuda()
+        yb = yb.cuda()
         y_pred = learn.model(xb)
         loss = learn.loss_func(ypred,yb)
         learn.model.load_state_dict(orig_state_dict)
